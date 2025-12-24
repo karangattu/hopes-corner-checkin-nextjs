@@ -3,8 +3,27 @@
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { LaundryKanban } from '@/components/lanes';
+import { useServicesStore } from '@/lib/stores/useServicesStore';
+import { useGuestsStore } from '@/lib/stores/useGuestsStore';
+import { useEffect, useCallback } from 'react';
 
 export default function LaundryKanbanPage() {
+  const { laundryRecords, updateLaundryStatus, deleteLaundryRecord } = useServicesStore();
+  const { guests, fetchGuests } = useGuestsStore();
+
+  useEffect(() => {
+    fetchGuests();
+  }, [fetchGuests]);
+
+  const updateLaundryBagNumber = useCallback(
+    async (recordId: string, bagNumber: string) => {
+      // Bag number update would be handled through updateLaundryStatus or a dedicated method
+      // For now, this is a placeholder that returns true
+      return true;
+    },
+    []
+  );
+
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* Header */}
@@ -23,7 +42,13 @@ export default function LaundryKanbanPage() {
       </div>
 
       {/* Kanban Board */}
-      <LaundryKanban />
+      <LaundryKanban
+        laundryRecords={laundryRecords}
+        guests={guests}
+        updateLaundryStatus={updateLaundryStatus}
+        updateLaundryBagNumber={updateLaundryBagNumber}
+        cancelLaundryRecord={deleteLaundryRecord}
+      />
     </div>
   );
 }

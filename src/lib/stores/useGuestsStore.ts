@@ -41,6 +41,7 @@ interface GuestUpdate {
   bannedAt?: string | null;
   bannedUntil?: string | null;
   banReason?: string;
+  isBanned?: boolean;
 }
 
 interface GuestsState {

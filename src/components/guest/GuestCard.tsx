@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   User,
   Home,
@@ -18,12 +18,19 @@ import {
   Bike,
   Scissors,
   Gift,
+  Undo2,
+  Loader2,
 } from 'lucide-react';
 import type { Guest } from '@/lib/types';
+import { enhancedToast } from '@/utils/toast';
 
 interface ServiceRecord {
   guestId: string;
   date: string;
+}
+
+interface MealRecordWithId extends ServiceRecord {
+  id: string;
 }
 
 interface GuestCardProps {
@@ -34,14 +41,17 @@ interface GuestCardProps {
   onDelete?: (guestId: string) => void;
   onBan?: (guestId: string) => void;
   onClearBan?: (guestId: string) => void;
-  onAddMeal?: (guestId: string) => void;
+  onAddMeal1?: (guestId: string) => Promise<void>;
+  onAddMeal2?: (guestId: string) => Promise<void>;
+  onAddExtraMeal?: (guestId: string) => Promise<void>;
+  onUndoMeal?: (guestId: string) => Promise<void>;
   onAddShower?: (guestId: string) => void;
   onAddLaundry?: (guestId: string) => void;
   onAddHaircut?: (guestId: string) => void;
   onAddHoliday?: (guestId: string) => void;
   onAddBicycle?: (guestId: string) => void;
   // Service records for today
-  todayMealRecords?: ServiceRecord[];
+  todayMealRecords?: MealRecordWithId[];
   todayShowerRecords?: ServiceRecord[];
   todayLaundryRecords?: ServiceRecord[];
   todayHaircutRecords?: ServiceRecord[];
@@ -49,6 +59,7 @@ interface GuestCardProps {
   todayBicycleRecords?: ServiceRecord[];
   className?: string;
   showActions?: boolean;
+  compact?: boolean;
 }
 
 const formatDate = (dateString: string | null): string => {
@@ -77,7 +88,10 @@ export function GuestCard({
   onDelete,
   onBan,
   onClearBan,
-  onAddMeal,
+  onAddMeal1,
+  onAddMeal2,
+  onAddExtraMeal,
+  onUndoMeal,
   onAddShower,
   onAddLaundry,
   onAddHaircut,
@@ -91,11 +105,72 @@ export function GuestCard({
   todayBicycleRecords = [],
   className = '',
   showActions = true,
+  compact = false,
 }: GuestCardProps) {
-  const hasMealToday = useMemo(
-    () => todayMealRecords.some((r) => r.guestId === guest.id),
+  const [mealLoading, setMealLoading] = useState(false);
+  const [undoLoading, setUndoLoading] = useState(false);
+  // optimistic local state: how many meals we've locally added but not yet reconciled
+  const [pendingMeals, setPendingMeals] = useState(0);
+
+  const guestMealRecords = useMemo(
+    () => todayMealRecords.filter((r) => r.guestId === guest.id),
     [todayMealRecords, guest.id]
   );
+  const mealCount = guestMealRecords.length;
+
+  // effective values include optimistic pending meals so the UI updates immediately
+  const effectiveMealCount = mealCount + pendingMeals;
+  const effectiveHasMeal = effectiveMealCount > 0;
+  // preserve previous variable name so other parts of the component continue working
+  const hasMealToday = effectiveHasMeal;
+
+  const handleAddMeals = async (
+    amount: number,
+    fn?: (id: string) => Promise<void>,
+    messages?: { success?: string; error?: string }
+  ) => {
+    if (!fn) return;
+    setMealLoading(true);
+    setPendingMeals((p) => p + amount);
+    try {
+      await fn(guest.id);
+      // success toast
+      enhancedToast.success(messages?.success ?? `${amount} meal${amount > 1 ? 's' : ''} added`);
+    } catch (e) {
+      // rollback optimistic update on failure
+      setPendingMeals((p) => p - amount);
+      enhancedToast.error(messages?.error ?? 'Failed to add meal');
+      console.error('Failed to add meal(s):', e);
+    } finally {
+      setMealLoading(false);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!onUndoMeal) return;
+    setUndoLoading(true);
+    try {
+      if (pendingMeals > 0) {
+        const count = pendingMeals;
+        // if we optimistically added multiple meals, undo them one-by-one
+        for (let i = 0; i < count; i++) {
+          // onUndoMeal is expected to remove a single meal record
+          await onUndoMeal(guest.id);
+        }
+        setPendingMeals(0);
+        enhancedToast.success(`${count} meal${count > 1 ? 's' : ''} undone`);
+      } else {
+        await onUndoMeal(guest.id);
+        enhancedToast.success('Meal undone');
+      }
+    } catch (e) {
+      enhancedToast.error('Failed to undo meal');
+      console.error('Failed to undo meal:', e);
+    } finally {
+      setUndoLoading(false);
+    }
+  };
+
   const hasShowerToday = useMemo(
     () => todayShowerRecords.some((r) => r.guestId === guest.id),
     [todayShowerRecords, guest.id]
@@ -121,13 +196,13 @@ export function GuestCard({
 
   return (
     <div
-      className={`bg-white dark:bg-gray-800 rounded-xl border ${
-        isBanned ? 'border-red-300 dark:border-red-700' : 'border-gray-200 dark:border-gray-700'
-      } shadow-sm transition-all ${className}`}
+      className={`bg-white rounded-xl border ${
+        isBanned ? 'border-red-300' : 'border-gray-200'
+      } shadow-sm transition-all hover:shadow-md ${className}`}
     >
       {/* Header - Always visible */}
       <div
-        className={`p-4 ${onToggleExpand ? 'cursor-pointer' : ''}`}
+        className={`${compact ? 'p-3' : 'p-4'} ${onToggleExpand ? 'cursor-pointer hover:bg-gray-50' : ''}`}
         onClick={onToggleExpand}
         role={onToggleExpand ? 'button' : undefined}
         tabIndex={onToggleExpand ? 0 : undefined}
@@ -147,117 +222,128 @@ export function GuestCard({
             <div
               className={`w-10 h-10 rounded-full flex items-center justify-center ${
                 isBanned
-                  ? 'bg-red-100 dark:bg-red-900/30 text-red-600'
-                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'
+                  ? 'bg-red-100 text-red-600'
+                  : 'bg-emerald-100 text-emerald-600'
               }`}
             >
               <User size={20} />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 {getDisplayName(guest)}
                 {isBanned && (
-                  <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">
+                  <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
                     <Ban size={12} /> Banned
                   </span>
                 )}
               </h3>
-              <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                <span className="flex items-center gap-1">
-                  <Home size={14} />
-                  {guest.housingStatus}
-                </span>
-                {guest.location && (
+              {!compact && (
+                <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
                   <span className="flex items-center gap-1">
-                    <MapPin size={14} />
-                    {guest.location}
+                    <Home size={14} />
+                    {guest.housingStatus}
                   </span>
-                )}
-              </div>
+                  {guest.location && (
+                    <span className="flex items-center gap-1">
+                      <MapPin size={14} />
+                      {guest.location}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Today's services indicator */}
-          <div className="flex items-center gap-2">
+          {!compact && (
+            <div className="flex items-center gap-2">
             {hasMealToday && (
-              <span className="text-green-600 dark:text-green-400" title="Meal recorded today">
-                <Utensils size={16} />
+              <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center" title="Meal recorded today">
+                <Utensils size={14} />
               </span>
             )}
             {hasShowerToday && (
-              <span className="text-blue-600 dark:text-blue-400" title="Shower recorded today">
-                <Droplets size={16} />
+              <span className="w-6 h-6 rounded-full bg-cyan-100 text-cyan-600 flex items-center justify-center" title="Shower recorded today">
+                <Droplets size={14} />
               </span>
             )}
             {hasLaundryToday && (
-              <span className="text-purple-600 dark:text-purple-400" title="Laundry recorded today">
-                <WashingMachine size={16} />
+              <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center" title="Laundry recorded today">
+                <WashingMachine size={14} />
               </span>
             )}
             {hasHaircutToday && (
-              <span className="text-amber-600 dark:text-amber-400" title="Haircut recorded today">
-                <Scissors size={16} />
+              <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center" title="Haircut recorded today">
+                <Scissors size={14} />
               </span>
             )}
             {hasHolidayToday && (
-              <span className="text-pink-600 dark:text-pink-400" title="Holiday recorded today">
-                <Gift size={16} />
+              <span className="w-6 h-6 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center" title="Holiday recorded today">
+                <Gift size={14} />
               </span>
             )}
             {hasBicycleToday && (
-              <span className="text-cyan-600 dark:text-cyan-400" title="Bicycle service today">
-                <Bike size={16} />
+              <span className="w-6 h-6 rounded-full bg-cyan-100 text-cyan-600 flex items-center justify-center" title="Bicycle service today">
+                <Bike size={14} />
               </span>
             )}
             {onToggleExpand && (
               <button
-                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="p-1 text-gray-400 hover:text-gray-600"
                 aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleExpand();
+                }}
               >
                 {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
               </button>
             )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Demographics */}
-        <div className="flex items-center gap-4 mt-3 text-sm text-gray-600 dark:text-gray-400">
-          <span>{guest.age}</span>
-          <span>•</span>
-          <span>{guest.gender}</span>
-          {guest.visitCount !== undefined && guest.visitCount > 0 && (
-            <>
-              <span>•</span>
-              <span className="flex items-center gap-1">
-                <CalendarClock size={14} />
-                {guest.visitCount} visits
-              </span>
-            </>
-          )}
-        </div>
+        {!compact && (
+          <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
+            <span>{guest.age}</span>
+            <span>•</span>
+            <span>{guest.gender}</span>
+            {guest.visitCount !== undefined && guest.visitCount > 0 && (
+              <>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <CalendarClock size={14} />
+                  {guest.visitCount} visits
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-gray-100 dark:border-gray-700 p-4 space-y-4">
+        <div className="border-t border-gray-100 p-4 space-y-4">
           {/* Last visit */}
           {guest.lastVisit && (
-            <div className="text-sm text-gray-600 dark:text-gray-400">
+            <div className="text-sm text-gray-600">
               <span className="font-medium">Last visit:</span> {formatDate(guest.lastVisit)}
             </div>
           )}
 
           {/* Notes */}
           {guest.notes && (
-            <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
-              <p className="text-sm text-gray-700 dark:text-gray-300">{guest.notes}</p>
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-700">{guest.notes}</p>
             </div>
           )}
 
           {/* Bicycle description */}
           {guest.bicycleDescription && (
-            <div className="bg-cyan-50 dark:bg-cyan-900/20 p-3 rounded-lg">
-              <p className="text-sm text-cyan-800 dark:text-cyan-300">
+            <div className="bg-cyan-50 p-3 rounded-lg">
+              <p className="text-sm text-cyan-800">
                 <span className="font-medium">Bicycle:</span> {guest.bicycleDescription}
               </p>
             </div>
@@ -265,8 +351,8 @@ export function GuestCard({
 
           {/* Ban reason */}
           {isBanned && guest.banReason && (
-            <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
-              <p className="text-sm text-red-800 dark:text-red-300">
+            <div className="bg-red-50 p-3 rounded-lg">
+              <p className="text-sm text-red-800">
                 <span className="font-medium">Ban reason:</span> {guest.banReason}
               </p>
             </div>
@@ -278,18 +364,83 @@ export function GuestCard({
               {/* Service buttons */}
               {!isBanned && (
                 <>
-                  {onAddMeal && !hasMealToday && (
-                    <button
-                      onClick={() => onAddMeal(guest.id)}
-                      className="px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors flex items-center gap-1"
-                    >
-                      <Utensils size={14} /> Meal
-                    </button>
+                  {!effectiveHasMeal ? (
+                    <>
+                      {onAddMeal1 && (
+                        <button
+                          onClick={async () => {
+                            await handleAddMeals(1, onAddMeal1);
+                          }}
+                          disabled={mealLoading}
+                          className="px-3 py-1.5 text-sm bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {mealLoading && pendingMeals > 0 ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Utensils size={14} />
+                          )}
+                          1 Meal
+                        </button>
+                      )}
+                      {onAddMeal2 && (
+                        <button
+                          onClick={async () => {
+                            await handleAddMeals(2, onAddMeal2);
+                          }}
+                          disabled={mealLoading}
+                          className="px-3 py-1.5 text-sm bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {mealLoading && pendingMeals > 0 ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Utensils size={14} />
+                          )}
+                          2 Meals
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="px-3 py-1.5 text-sm bg-emerald-500 text-white rounded-lg flex items-center gap-1 font-medium">
+                        <Utensils size={14} /> {effectiveMealCount} Meal{effectiveMealCount > 1 ? 's' : ''} {mealLoading && pendingMeals > 0 ? '…' : '✓'}
+                      </div>
+                      {onUndoMeal && (
+                        <button
+                          onClick={handleUndo}
+                          disabled={undoLoading}
+                          className="px-3 py-1.5 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Undo meal"
+                        >
+                          {undoLoading ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Undo2 size={14} />
+                          )}
+                          Undo
+                        </button>
+                      )}
+                      {onAddExtraMeal && (
+                        <button
+                          onClick={async () => {
+                            await handleAddMeals(1, onAddExtraMeal, { success: 'Extra meal added', error: 'Failed to add extra meal' });
+                          }}
+                          disabled={mealLoading}
+                          className="px-3 py-1.5 text-sm bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {mealLoading && pendingMeals > 0 ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Utensils size={14} />
+                          )}
+                          +Extra
+                        </button>
+                      )}
+                    </>
                   )}
                   {onAddShower && !hasShowerToday && (
                     <button
                       onClick={() => onAddShower(guest.id)}
-                      className="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-sm bg-cyan-100 text-cyan-700 rounded-lg hover:bg-cyan-200 transition-colors flex items-center gap-1"
                     >
                       <Droplets size={14} /> Shower
                     </button>
@@ -297,7 +448,7 @@ export function GuestCard({
                   {onAddLaundry && !hasLaundryToday && (
                     <button
                       onClick={() => onAddLaundry(guest.id)}
-                      className="px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors flex items-center gap-1"
                     >
                       <WashingMachine size={14} /> Laundry
                     </button>
@@ -305,7 +456,7 @@ export function GuestCard({
                   {onAddHaircut && !hasHaircutToday && (
                     <button
                       onClick={() => onAddHaircut(guest.id)}
-                      className="px-3 py-1.5 text-sm bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-sm bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition-colors flex items-center gap-1"
                     >
                       <Scissors size={14} /> Haircut
                     </button>
@@ -313,7 +464,7 @@ export function GuestCard({
                   {onAddHoliday && !hasHolidayToday && (
                     <button
                       onClick={() => onAddHoliday(guest.id)}
-                      className="px-3 py-1.5 text-sm bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 rounded-lg hover:bg-pink-200 dark:hover:bg-pink-900/50 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-sm bg-pink-100 text-pink-700 rounded-lg hover:bg-pink-200 transition-colors flex items-center gap-1"
                     >
                       <Gift size={14} /> Holiday
                     </button>
@@ -321,7 +472,7 @@ export function GuestCard({
                   {onAddBicycle && !hasBicycleToday && (
                     <button
                       onClick={() => onAddBicycle(guest.id)}
-                      className="px-3 py-1.5 text-sm bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 rounded-lg hover:bg-cyan-200 dark:hover:bg-cyan-900/50 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-sm bg-cyan-100 text-cyan-700 rounded-lg hover:bg-cyan-200 transition-colors flex items-center gap-1"
                     >
                       <Bike size={14} /> Bicycle
                     </button>
@@ -334,7 +485,7 @@ export function GuestCard({
               {onEdit && (
                 <button
                   onClick={() => onEdit(guest)}
-                  className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-1"
+                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-1"
                 >
                   <Edit2 size={14} /> Edit
                 </button>
@@ -342,7 +493,7 @@ export function GuestCard({
               {isBanned && onClearBan && (
                 <button
                   onClick={() => onClearBan(guest.id)}
-                  className="px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors flex items-center gap-1"
+                  className="px-3 py-1.5 text-sm bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors flex items-center gap-1"
                 >
                   <RotateCcw size={14} /> Clear Ban
                 </button>
@@ -350,7 +501,7 @@ export function GuestCard({
               {!isBanned && onBan && (
                 <button
                   onClick={() => onBan(guest.id)}
-                  className="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex items-center gap-1"
+                  className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors flex items-center gap-1"
                 >
                   <Ban size={14} /> Ban
                 </button>
@@ -358,7 +509,7 @@ export function GuestCard({
               {onDelete && (
                 <button
                   onClick={() => onDelete(guest.id)}
-                  className="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex items-center gap-1"
+                  className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors flex items-center gap-1"
                 >
                   <Trash2 size={14} /> Delete
                 </button>

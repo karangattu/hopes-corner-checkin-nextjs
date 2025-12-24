@@ -24,3 +24,19 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Improve placeholder contrast for accessibility */
+@layer base {
+  input::placeholder,
+  textarea::placeholder {
+    /* Use a higher-contrast gray for placeholders */
+    color: theme('colors.gray.600');
+    opacity: 1; /* keep opacity full to ensure readability */
+  }
+
+  /* Ensure selects and other controls are readable when they expose placeholder text */
+  select::-ms-value {
+    color: theme('colors.gray.600');
+    opacity: 1;
+  }
+}

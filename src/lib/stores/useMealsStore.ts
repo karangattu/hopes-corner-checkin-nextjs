@@ -70,6 +70,10 @@ interface MealsState {
   mealRecords: MealRecord[];
   rvMealRecords: MealRecord[];
   extraMealRecords: MealRecord[];
+  shelterMealRecords: MealRecord[];
+  unitedEffortMealRecords: MealRecord[];
+  dayWorkerMealRecords: MealRecord[];
+  lunchBagMealRecords: MealRecord[];
   holidayRecords: HolidayRecord[];
   haircutRecords: HaircutRecord[];
   isLoading: boolean;
@@ -81,6 +85,7 @@ interface MealsActions {
   // Meal Actions
   addMealRecord: (guestId: string, quantity?: number) => Promise<MealRecord>;
   deleteMealRecord: (recordId: string) => Promise<void>;
+  undoMealForGuest: (guestId: string) => Promise<void>;
   
   // RV Meal Actions
   addRvMealRecord: (guestId: string, quantity?: number) => Promise<MealRecord>;
@@ -110,6 +115,10 @@ interface MealsActions {
   getTodayExtraMeals: () => MealRecord[];
   getTodayHolidays: () => HolidayRecord[];
   getTodayHaircuts: () => HaircutRecord[];
+  
+  // Generic meal type selectors for future expansion
+  getMealsByType: (type: MealType) => MealRecord[];
+  getTodayMealsByType: (type: MealType) => MealRecord[];
 }
 
 type MealsStore = MealsState & MealsActions;
@@ -123,6 +132,10 @@ export const useMealsStore = create<MealsStore>()(
           mealRecords: [],
           rvMealRecords: [],
           extraMealRecords: [],
+          shelterMealRecords: [],
+          unitedEffortMealRecords: [],
+          dayWorkerMealRecords: [],
+          lunchBagMealRecords: [],
           holidayRecords: [],
           haircutRecords: [],
           isLoading: false,
@@ -136,6 +149,44 @@ export const useMealsStore = create<MealsStore>()(
 
             if (isSupabaseEnabled()) {
               const supabase = createClient();
+
+              // Check if a record already exists for this guest today
+              const { data: existing } = await supabase
+                .from('meal_attendance')
+                .select('id, quantity')
+                .eq('guest_id', guestId)
+                .eq('served_on', todayStr)
+                .eq('meal_type', 'guest')
+                .single();
+
+              if (existing) {
+                // Update existing record by adding to quantity
+                const newQuantity = existing.quantity + quantity;
+                const { data, error } = await supabase
+                  .from('meal_attendance')
+                  .update({ quantity: newQuantity, updated_at: new Date().toISOString() })
+                  .eq('id', existing.id)
+                  .select()
+                  .single();
+
+                if (error) {
+                  console.error('Failed to update meal record in Supabase:', error);
+                  throw new Error('Unable to update meal record');
+                }
+
+                const mapped = mapMealRow(data as MealAttendanceRow);
+                set((state) => {
+                  const idx = state.mealRecords.findIndex((r) => r.id === existing.id);
+                  if (idx >= 0) {
+                    state.mealRecords[idx] = mapped;
+                  } else {
+                    state.mealRecords.push(mapped);
+                  }
+                });
+                return mapped;
+              }
+
+              // No existing record, create new one
               const payload = {
                 guest_id: guestId,
                 quantity,
@@ -196,6 +247,56 @@ export const useMealsStore = create<MealsStore>()(
 
               if (error) {
                 console.error('Failed to delete meal record from Supabase:', error);
+              }
+            }
+          },
+
+          undoMealForGuest: async (guestId: string): Promise<void> => {
+            if (!guestId) throw new Error('Guest ID is required');
+
+            const todayStr = todayPacificDateString();
+
+            if (isSupabaseEnabled()) {
+              const supabase = createClient();
+
+              // Find today's meal record for this guest
+              const { data: existing, error: fetchError } = await supabase
+                .from('meal_attendance')
+                .select('id')
+                .eq('guest_id', guestId)
+                .eq('served_on', todayStr)
+                .eq('meal_type', 'guest')
+                .single();
+
+              if (fetchError || !existing) {
+                console.error('No meal record found to undo:', fetchError);
+                throw new Error('No meal record found to undo');
+              }
+
+              // Delete the record
+              const { error } = await supabase
+                .from('meal_attendance')
+                .delete()
+                .eq('id', existing.id);
+
+              if (error) {
+                console.error('Failed to undo meal record:', error);
+                throw new Error('Unable to undo meal record');
+              }
+
+              set((state) => {
+                state.mealRecords = state.mealRecords.filter((r) => r.id !== existing.id);
+              });
+            } else {
+              // Local fallback - remove the most recent meal for this guest today
+              const { mealRecords } = get();
+              const todayRecord = mealRecords.find(
+                (r) => r.guestId === guestId && r.date === todayStr && r.type === 'guest'
+              );
+              if (todayRecord) {
+                set((state) => {
+                  state.mealRecords = state.mealRecords.filter((r) => r.id !== todayRecord.id);
+                });
               }
             }
           },
@@ -497,11 +598,19 @@ export const useMealsStore = create<MealsStore>()(
               const guestMeals = meals.filter((m) => m.type === 'guest');
               const rvMeals = meals.filter((m) => m.type === 'rv');
               const extraMeals = meals.filter((m) => m.type === 'extra');
+              const shelterMeals = meals.filter((m) => m.type === 'shelter');
+              const unitedEffortMeals = meals.filter((m) => m.type === 'united_effort');
+              const dayWorkerMeals = meals.filter((m) => m.type === 'day_worker');
+              const lunchBagMeals = meals.filter((m) => m.type === 'lunch_bag');
 
               set((state) => {
                 state.mealRecords = guestMeals;
                 state.rvMealRecords = rvMeals;
                 state.extraMealRecords = extraMeals;
+                state.shelterMealRecords = shelterMeals;
+                state.unitedEffortMealRecords = unitedEffortMeals;
+                state.dayWorkerMealRecords = dayWorkerMeals;
+                state.lunchBagMealRecords = lunchBagMeals;
                 state.holidayRecords = (holidayRes.data || []).map((row) => 
                   mapHolidayRow(row as HolidayVisitRow)
                 );
@@ -525,6 +634,10 @@ export const useMealsStore = create<MealsStore>()(
               state.mealRecords = [];
               state.rvMealRecords = [];
               state.extraMealRecords = [];
+              state.shelterMealRecords = [];
+              state.unitedEffortMealRecords = [];
+              state.dayWorkerMealRecords = [];
+              state.lunchBagMealRecords = [];
               state.holidayRecords = [];
               state.haircutRecords = [];
             });
@@ -565,6 +678,28 @@ export const useMealsStore = create<MealsStore>()(
               (r) => pacificDateStringFrom(r.date) === today
             );
           },
+
+          // Generic selectors for meal type filtering
+          getMealsByType: (type: MealType): MealRecord[] => {
+            const allMeals = [
+              ...get().mealRecords,
+              ...get().rvMealRecords,
+              ...get().extraMealRecords,
+              ...get().shelterMealRecords,
+              ...get().unitedEffortMealRecords,
+              ...get().dayWorkerMealRecords,
+              ...get().lunchBagMealRecords,
+            ];
+            return allMeals.filter((m) => m.type === type);
+          },
+
+          getTodayMealsByType: (type: MealType): MealRecord[] => {
+            const today = todayPacificDateString();
+            const meals = get().getMealsByType(type);
+            return meals.filter(
+              (r) => pacificDateStringFrom(r.date) === today
+            );
+          },
         })),
         {
           name: 'hopes-corner-meals',
@@ -572,6 +707,10 @@ export const useMealsStore = create<MealsStore>()(
             mealRecords: state.mealRecords,
             rvMealRecords: state.rvMealRecords,
             extraMealRecords: state.extraMealRecords,
+            shelterMealRecords: state.shelterMealRecords,
+            unitedEffortMealRecords: state.unitedEffortMealRecords,
+            dayWorkerMealRecords: state.dayWorkerMealRecords,
+            lunchBagMealRecords: state.lunchBagMealRecords,
             holidayRecords: state.holidayRecords,
             haircutRecords: state.haircutRecords,
           }),

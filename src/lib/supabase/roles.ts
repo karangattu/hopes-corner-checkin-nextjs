@@ -42,9 +42,9 @@ const PERMISSIONS: Record<UserRole, Record<Resource, Action[]>> = {
 // Route access configuration
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   admin: ['/check-in', '/services', '/admin', '/settings'],
-  board: ['/check-in', '/services', '/admin'],
-  staff: ['/check-in', '/services', '/admin'],
-  checkin: ['/check-in', '/services'],
+  board: ['/admin'],
+  staff: ['/check-in', '/services'],
+  checkin: ['/check-in'],
 };
 
 // Check if a role has permission for an action on a resource
@@ -71,6 +71,7 @@ export function hasAccess(role: UserRole | null, pathname: string): boolean {
 // Get the default redirect path for a role
 export function getDefaultPath(role: UserRole | null): string {
   if (!role) return '/login';
+  if (role === 'board') return '/admin';
   return '/check-in';
 }
 

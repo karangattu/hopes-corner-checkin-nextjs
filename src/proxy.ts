@@ -5,7 +5,7 @@ import { hasAccess, getDefaultPath, type UserRole } from '@/lib/supabase/roles';
 // Routes that don't require authentication
 const PUBLIC_ROUTES = ['/login', '/offline.html', '/service-worker.js'];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow static files and API routes
@@ -25,35 +25,58 @@ export async function middleware(request: NextRequest) {
 
   // Update session and get user
   const { user, supabaseResponse } = await updateSession(request);
+  const role = (user?.user_metadata?.role as UserRole | undefined) || 'checkin';
 
   // If not authenticated and trying to access protected route
   if (!user && !isPublicRoute) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
-    return NextResponse.redirect(loginUrl);
+
+    // Create redirect response
+    const response = NextResponse.redirect(loginUrl);
+    // Copy cookies from supabaseResponse to ensure session is cleared if needed
+    supabaseResponse.cookies.getAll().forEach(cookie => {
+      response.cookies.set(cookie.name, cookie.value, cookie);
+    });
+    return response;
   }
 
   // If authenticated and trying to access login page, redirect to default
   if (user && pathname === '/login') {
-    const role = user.user_metadata?.role as UserRole | undefined;
-    const redirectPath = getDefaultPath(role || null);
-    return NextResponse.redirect(new URL(redirectPath, request.url));
+    const redirectPath = getDefaultPath(role);
+    if (redirectPath !== pathname) {
+      const response = NextResponse.redirect(new URL(redirectPath, request.url));
+      // Copy cookies from supabaseResponse (important for session update)
+      supabaseResponse.cookies.getAll().forEach(cookie => {
+        response.cookies.set(cookie.name, cookie.value, cookie);
+      });
+      return response;
+    }
   }
 
   // Check role-based access for protected routes
   if (user && !isPublicRoute) {
-    const role = user.user_metadata?.role as UserRole | undefined;
-    const hasRouteAccess = hasAccess(role || null, pathname);
+    const hasRouteAccess = hasAccess(role, pathname);
 
     // Root path redirects to check-in
     if (pathname === '/') {
-      return NextResponse.redirect(new URL('/check-in', request.url));
+      const response = NextResponse.redirect(new URL('/check-in', request.url));
+      supabaseResponse.cookies.getAll().forEach(cookie => {
+        response.cookies.set(cookie.name, cookie.value, cookie);
+      });
+      return response;
     }
 
     // If user doesn't have access, redirect to their default page
     if (!hasRouteAccess) {
-      const defaultPath = getDefaultPath(role || null);
-      return NextResponse.redirect(new URL(defaultPath, request.url));
+      const defaultPath = getDefaultPath(role);
+      if (defaultPath !== pathname) {
+        const response = NextResponse.redirect(new URL(defaultPath, request.url));
+        supabaseResponse.cookies.getAll().forEach(cookie => {
+          response.cookies.set(cookie.name, cookie.value, cookie);
+        });
+        return response;
+      }
     }
   }
 

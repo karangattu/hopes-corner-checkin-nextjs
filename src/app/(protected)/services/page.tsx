@@ -1,111 +1,138 @@
 'use client';
 
-import { Droplets, Shirt, Wrench } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Droplets, Shirt, Gift, Bike, Clock, LayoutGrid } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { MealOverview } from '@/components/services/MealOverview';
+import { ShowerSection } from '@/components/services/ShowerSection';
+import { LaundrySection } from '@/components/services/LaundrySection';
+import { BicycleSection } from '@/components/services/BicycleSection';
+import { DonationsSection } from '@/components/services/DonationsSection';
+import { TimelineSection } from '@/components/services/TimelineSection';
+import { StickyQuickActions } from '@/components/services/StickyQuickActions';
+import { useUserRole } from '@/hooks/useUserRole';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+
+type ServiceTab = 'overview' | 'timeline' | 'showers' | 'laundry' | 'bicycles' | 'donations';
+
+const TABS = [
+  { id: 'overview' as const, label: 'Overview', icon: LayoutGrid },
+  { id: 'timeline' as const, label: 'Timeline', icon: Clock },
+  { id: 'showers' as const, label: 'Showers', icon: Droplets },
+  { id: 'laundry' as const, label: 'Laundry', icon: Shirt },
+  { id: 'bicycles' as const, label: 'Bicycles', icon: Bike },
+  { id: 'donations' as const, label: 'Donations', icon: Gift },
+];
 
 export default function ServicesPage() {
+  const [activeTab, setActiveTab] = useState<ServiceTab>('overview');
+  const { role } = useUserRole();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const section = searchParams.get('section') || searchParams.get('tab');
+    if (!section) return;
+    if (section === 'showers' || section === 'laundry' || section === 'bicycles' || section === 'donations' || section === 'timeline' || section === 'overview') {
+      setActiveTab(section);
+    }
+  }, [searchParams]);
+
+  const allowedTabs = useMemo(() => {
+    if (role === 'admin' || role === 'staff') return TABS;
+    return [];
+  }, [role]);
+
+  useEffect(() => {
+    if (allowedTabs.length === 0) return;
+    const isActiveAllowed = allowedTabs.some((tab) => tab.id === activeTab);
+    if (!isActiveAllowed) {
+      setActiveTab(allowedTabs[0].id);
+    }
+  }, [allowedTabs, activeTab]);
+
+  const handleQuickAction = useCallback((tabId: ServiceTab) => {
+    setActiveTab(tabId);
+  }, []);
+
+  const enableShortcuts = role === 'admin' || role === 'staff';
+  useKeyboardShortcuts(
+    enableShortcuts
+      ? [
+          { key: 's', shift: true, action: () => handleQuickAction('showers') },
+          { key: 'l', shift: true, action: () => handleQuickAction('laundry') },
+          { key: 'd', shift: true, action: () => handleQuickAction('donations') },
+        ]
+      : []
+  );
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'overview':
+        return <MealOverview />;
+      case 'timeline':
+        return <TimelineSection />;
+      case 'showers':
+        return <ShowerSection />;
+      case 'laundry':
+        return <LaundrySection />;
+      case 'bicycles':
+        return <BicycleSection />;
+      case 'donations':
+        return <DonationsSection />;
+      default:
+        return <MealOverview />;
+    }
+  };
+
+  if (allowedTabs.length === 0) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center space-y-3">
+          <p className="text-lg font-semibold text-gray-900">Services are limited to staff and admins.</p>
+          <p className="text-sm text-gray-500">Switch to the Check-In tab or contact an administrator if you need additional access.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Services</h1>
-        <p className="text-gray-500 mt-1">
-          Manage shower bookings, laundry, and bicycle repairs.
-        </p>
-      </div>
-
-      {/* Service Cards */}
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Showers */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Droplets className="text-blue-600" size={24} />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Showers</h2>
-              <p className="text-sm text-gray-500">Book shower times</p>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Today&apos;s bookings</span>
-              <span className="font-medium text-gray-900">0</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Available slots</span>
-              <span className="font-medium text-green-600">5</span>
-            </div>
-          </div>
-          <button className="mt-4 w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-            Manage Showers
-          </button>
-        </div>
-
-        {/* Laundry */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Shirt className="text-purple-600" size={24} />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Laundry</h2>
-              <p className="text-sm text-gray-500">Track laundry loads</p>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">In progress</span>
-              <span className="font-medium text-gray-900">0</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Ready for pickup</span>
-              <span className="font-medium text-green-600">0</span>
-            </div>
-          </div>
-          <button className="mt-4 w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">
-            Manage Laundry
-          </button>
-        </div>
-
-        {/* Bicycle Repairs */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-              <Wrench className="text-orange-600" size={24} />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Bicycles</h2>
-              <p className="text-sm text-gray-500">Repair tracking</p>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Pending repairs</span>
-              <span className="font-medium text-gray-900">0</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">In progress</span>
-              <span className="font-medium text-yellow-600">0</span>
-            </div>
-          </div>
-          <button className="mt-4 w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors">
-            Manage Repairs
-          </button>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-32">
+      {/* Tab Navigation */}
+      <div className="mb-6 overflow-x-auto">
+        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl min-w-max">
+          {allowedTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
+                  isActive
+                    ? 'bg-white text-emerald-700 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Icon size={18} />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Today's Activity */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Today&apos;s Activity
-        </h2>
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          <p>No service activity recorded today.</p>
-          <p className="text-sm mt-1">
-            Service records will appear here as they are created.
-          </p>
-        </div>
+      {/* Tab Content */}
+      <div className="min-h-[60vh]">
+        {renderContent()}
       </div>
+
+      {/* Sticky Quick Actions */}
+      <StickyQuickActions
+        role={role}
+        onShowerAction={() => handleQuickAction('showers')}
+        onLaundryAction={() => handleQuickAction('laundry')}
+        onDonationAction={() => handleQuickAction('donations')}
+      />
     </div>
   );
 }

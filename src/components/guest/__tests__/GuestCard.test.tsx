@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { GuestCard } from '../GuestCard';
 import type { Guest } from '@/lib/types';
+import { enhancedToast } from '@/utils/toast';
 
 const createMockGuest = (overrides: Partial<Guest> = {}): Guest => ({
   id: 'guest-1',
@@ -119,7 +120,7 @@ describe('GuestCard', () => {
       render(
         <GuestCard 
           guest={guest} 
-          todayMealRecords={[{ guestId: 'guest-1', date: '2024-01-15' }]}
+          todayMealRecords={[{ id: 'meal-1', guestId: 'guest-1', date: '2024-01-15' }]}
         />
       );
       // The meal indicator has a title attribute
@@ -197,14 +198,132 @@ describe('GuestCard', () => {
   });
 
   describe('service actions', () => {
-    it('calls onAddMeal when meal button clicked', () => {
-      const onAddMeal = vi.fn();
+    it('calls onAddMeal1 when meal button clicked', () => {
+      const onAddMeal1 = vi.fn();
       const guest = createMockGuest();
-      render(<GuestCard guest={guest} isExpanded={true} onAddMeal={onAddMeal} />);
+      render(<GuestCard guest={guest} isExpanded={true} onAddMeal1={onAddMeal1} />);
       
-      const mealButton = screen.getByRole('button', { name: /meal/i });
+      const mealButton = screen.getByRole('button', { name: /1\s*meal/i });
       fireEvent.click(mealButton);
-      expect(onAddMeal).toHaveBeenCalledWith('guest-1');
+      expect(onAddMeal1).toHaveBeenCalledWith('guest-1');
+    });
+
+    it('optimistically updates and shows success toast on add', async () => {
+      const successSpy = vi.spyOn(enhancedToast, 'success').mockImplementation(() => undefined as any);
+      const errorSpy = vi.spyOn(enhancedToast, 'error').mockImplementation(() => undefined as any);
+
+      let resolveAdd: () => void;
+      const addPromise = new Promise<void>((res) => { resolveAdd = res; });
+      const onAddMeal1 = vi.fn(() => addPromise);
+
+      const guest = createMockGuest();
+      render(<GuestCard guest={guest} isExpanded={true} onAddMeal1={onAddMeal1} onUndoMeal={vi.fn()} />);
+
+      const mealButton = screen.getByRole('button', { name: /1\s*meal/i });
+      fireEvent.click(mealButton);
+      expect(onAddMeal1).toHaveBeenCalledWith('guest-1');
+
+      // after clicking, the meal buttons are replaced by the optimistic count and Undo
+      await waitFor(() => expect(screen.getByText(/1 Meal/)).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /1\s*meal/i })).not.toBeInTheDocument();
+
+      // resolve the add and expect success toast
+      resolveAdd!();
+
+      await waitFor(() => expect(successSpy).toHaveBeenCalledWith('1 meal added'));
+
+      successSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it('undo rolls back optimistic state and shows success toast', async () => {
+      const successSpy = vi.spyOn(enhancedToast, 'success').mockImplementation(() => undefined as any);
+      const onUndoMeal = vi.fn(() => Promise.resolve());
+
+      let resolveAdd: () => void;
+      const addPromise = new Promise<void>((res) => { resolveAdd = res; });
+      const onAddMeal1 = vi.fn(() => addPromise);
+
+      const guest = createMockGuest();
+      render(<GuestCard guest={guest} isExpanded={true} onAddMeal1={onAddMeal1} onUndoMeal={onUndoMeal} />);
+
+      const mealButton = screen.getByRole('button', { name: /1\s*meal/i });
+      fireEvent.click(mealButton);
+
+      // Undo should be available while add is pending
+      const undoButton = await screen.findByRole('button', { name: /undo/i });
+      expect(undoButton).toBeEnabled();
+
+      fireEvent.click(undoButton);
+
+      await waitFor(() => expect(onUndoMeal).toHaveBeenCalled());
+      await waitFor(() => expect(successSpy).toHaveBeenCalledWith('1 meal undone'));
+
+      successSpy.mockRestore();
+    });
+
+    it('shows error toast and rolls back optimistic state on add failure', async () => {
+      const errorSpy = vi.spyOn(enhancedToast, 'error').mockImplementation(() => undefined as any);
+      const onAddMeal1 = vi.fn(() => Promise.reject(new Error('boom')));
+
+      const guest = createMockGuest();
+      render(<GuestCard guest={guest} isExpanded={true} onAddMeal1={onAddMeal1} onUndoMeal={vi.fn()} />);
+
+      const mealButton = screen.getByRole('button', { name: /1\s*meal/i });
+      fireEvent.click(mealButton);
+
+      await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('Failed to add meal'));
+
+      // optimistic count should be rolled back and original buttons restored
+      expect(screen.getByRole('button', { name: /1\s*meal/i })).toBeInTheDocument();
+
+      errorSpy.mockRestore();
+    });
+
+    it('adds extra meal and shows extra success toast', async () => {
+      const successSpy = vi.spyOn(enhancedToast, 'success').mockImplementation(() => undefined as any);
+      const onAddExtraMeal = vi.fn(() => Promise.resolve());
+
+      const guest = createMockGuest();
+      // pass an existing meal so the +Extra button is visible
+      render(
+        <GuestCard
+          guest={guest}
+          isExpanded={true}
+          onAddExtraMeal={onAddExtraMeal}
+          onUndoMeal={vi.fn()}
+          todayMealRecords={[{ id: 'meal-1', guestId: 'guest-1', date: '2024-01-15' }]}
+        />
+      );
+
+      const extraButton = screen.getByRole('button', { name: /\+extra/i });
+      fireEvent.click(extraButton);
+
+      await waitFor(() => expect(onAddExtraMeal).toHaveBeenCalledWith('guest-1'));
+      await waitFor(() => expect(successSpy).toHaveBeenCalledWith('Extra meal added'));
+
+      successSpy.mockRestore();
+    });
+
+    it('shows error toast when undo fails', async () => {
+      const errorSpy = vi.spyOn(enhancedToast, 'error').mockImplementation(() => undefined as any);
+      const onUndoMeal = vi.fn(() => Promise.reject(new Error('boom')));
+
+      let resolveAdd: () => void;
+      const addPromise = new Promise<void>((res) => { resolveAdd = res; });
+      const onAddMeal1 = vi.fn(() => addPromise);
+
+      const guest = createMockGuest();
+      render(<GuestCard guest={guest} isExpanded={true} onAddMeal1={onAddMeal1} onUndoMeal={onUndoMeal} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /1\s*meal/i }));
+
+      const undoButton = await screen.findByRole('button', { name: /undo/i });
+      fireEvent.click(undoButton);
+
+      await waitFor(() => expect(errorSpy).toHaveBeenCalledWith('Failed to undo meal'));
+
+      errorSpy.mockRestore();
     });
 
     it('calls onAddShower when shower button clicked', () => {

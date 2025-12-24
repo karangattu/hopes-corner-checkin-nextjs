@@ -1,160 +1,489 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useGuestsStore } from '@/lib/stores/useGuestsStore';
-import { Search, UserPlus, RefreshCw } from 'lucide-react';
+import { useMealsStore } from '@/lib/stores/useMealsStore';
+import { useServicesStore } from '@/lib/stores/useServicesStore';
+import { WelcomeBanner, ServiceStatusOverview } from '@/components/check-in';
+import { GuestList } from '@/components/guest/GuestList';
+import { BanGuestModal } from '@/components/guest/BanGuestModal';
+import { ShowerBooking, LaundryBooking, BicycleRepairBooking } from '@/components/services';
+import { WaiverModal } from '@/components/common/WaiverModal';
+import type { GuestFormData } from '@/components/guest/GuestCreateForm';
+import type { Guest } from '@/lib/types';
+import { useUserRole } from '@/hooks/useUserRole';
+import { todayPacificDateString } from '@/lib/utils/date';
 
 export default function CheckInPage() {
-  const { guests, fetchGuests, isLoading } = useGuestsStore();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
+  const { guests, fetchGuests, isLoading, addGuest, updateGuest, deleteGuest } = useGuestsStore();
+  const { addMealRecord, getTodayMeals, undoMealForGuest } = useMealsStore();
+  const { 
+    getTodayShowers, 
+    getTodayLaundry, 
+    getTodayBicycles,
+    addShowerRecord,
+    addLaundryRecord,
+    addBicycleRecord,
+    showerRecords: allShowerRecords,
+    laundryRecords: allLaundryRecords,
+  } = useServicesStore();
+  const { role } = useUserRole();
 
+  // Modal states
+  const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);
+  const [showShowerModal, setShowShowerModal] = useState(false);
+  const [showLaundryModal, setShowLaundryModal] = useState(false);
+  const [showBicycleModal, setShowBicycleModal] = useState(false);
+  const [banTarget, setBanTarget] = useState<Guest | null>(null);
+
+  type WaiverService = 'shower' | 'laundry' | 'bicycle';
+  const [showWaiverModal, setShowWaiverModal] = useState(false);
+  const [pendingServiceAction, setPendingServiceAction] = useState<{
+    guest: Guest;
+    service: WaiverService;
+    onContinue: () => void;
+  } | null>(null);
+  const [waiverSignatures, setWaiverSignatures] = useState<
+    Record<string, Partial<Record<WaiverService, string>>>
+  >({});
+
+  // Determine if user can navigate to services
+  const canNavigateToServices = role === 'admin' || role === 'staff';
+
+  // Fetch guests on mount
   useEffect(() => {
     fetchGuests();
   }, [fetchGuests]);
 
-  const filteredGuests = guests.filter((guest) => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      guest.name?.toLowerCase().includes(searchLower) ||
-      guest.firstName?.toLowerCase().includes(searchLower) ||
-      guest.lastName?.toLowerCase().includes(searchLower) ||
-      guest.guestId?.toLowerCase().includes(searchLower)
-    );
-  });
+  // Get today's service records
+  const todayShowerRecords = useMemo(() => {
+    try {
+      return getTodayShowers?.() || [];
+    } catch {
+      return [];
+    }
+  }, [getTodayShowers]);
+
+  const todayLaundryRecords = useMemo(() => {
+    try {
+      return getTodayLaundry?.() || [];
+    } catch {
+      return [];
+    }
+  }, [getTodayLaundry]);
+
+  // Calculate stats from records
+  const showerStats = useMemo(() => {
+    const total = 8; // Default total shower slots
+    const booked = todayShowerRecords.filter(r => r.status === 'booked' || r.status === 'done').length;
+    const waitlistCount = todayShowerRecords.filter(r => r.status === 'waitlisted').length;
+    return {
+      available: Math.max(0, total - booked),
+      total,
+      waitlistCount,
+    };
+  }, [todayShowerRecords]);
+
+  const laundryStats = useMemo(() => {
+    const total = 5; // Default total laundry slots
+    const active = todayLaundryRecords.filter(r => 
+      r.status === 'waiting' || r.status === 'washer' || r.status === 'dryer'
+    ).length;
+    return {
+      available: Math.max(0, total - active),
+      total,
+    };
+  }, [todayLaundryRecords]);
+
+  // Get today's meal records
+  const todayMealRecords = useMemo(() => {
+    try {
+      const meals = getTodayMeals?.() || [];
+      return meals.map((meal) => ({
+        id: meal.id,
+        guestId: meal.guestId || '',
+        date: meal.date,
+      }));
+    } catch {
+      return [];
+    }
+  }, [getTodayMeals]);
+
+  const ensureWaiverThen = useCallback(
+    (guest: Guest, service: WaiverService, onContinue: () => void) => {
+      const guestSignatures = waiverSignatures[guest.id] || {};
+      const hasServicesWaiver = guestSignatures.shower || guestSignatures.laundry;
+      if ((service === 'shower' || service === 'laundry') && hasServicesWaiver) {
+        onContinue();
+        return;
+      }
+      if (service === 'bicycle' && guestSignatures.bicycle) {
+        onContinue();
+        return;
+      }
+      setPendingServiceAction({ guest, service, onContinue });
+      setShowWaiverModal(true);
+    },
+    [waiverSignatures]
+  );
+
+  const waiverModalWaivers = useMemo(() => {
+    if (!pendingServiceAction) return [];
+    const { guest, service } = pendingServiceAction;
+    const guestSignatures = waiverSignatures[guest.id] || {};
+    const sharedSignedAt = guestSignatures.shower || guestSignatures.laundry || null;
+
+    if (service === 'bicycle') {
+      return [
+        {
+          id: 'bicycle-waiver',
+          name: 'Bicycle Program Waiver',
+          description: 'Confirm bicycle waiver is signed before logging repair work.',
+          required: true,
+          signedAt: guestSignatures.bicycle || null,
+        },
+      ];
+    }
+
+    return [
+      {
+        id: 'services-waiver',
+        name: 'Services Waiver',
+        description: 'Required once per year and covers both shower and laundry services.',
+        required: true,
+        signedAt: sharedSignedAt,
+      },
+    ];
+  }, [pendingServiceAction, waiverSignatures]);
+
+  const handleWaiverSigned = useCallback(async () => {
+    if (!pendingServiceAction) return;
+    const { guest, service, onContinue } = pendingServiceAction;
+    const timestamp = new Date().toISOString();
+
+    setWaiverSignatures((prev) => {
+      const guestRecord = prev[guest.id] || {};
+      const updated = { ...guestRecord };
+      if (service === 'bicycle') {
+        updated.bicycle = timestamp;
+      } else {
+        updated.shower = timestamp;
+        updated.laundry = timestamp;
+      }
+      return { ...prev, [guest.id]: updated };
+    });
+
+    setShowWaiverModal(false);
+    setPendingServiceAction(null);
+    onContinue();
+  }, [pendingServiceAction]);
+
+  const handleCloseWaiverModal = useCallback(() => {
+    setShowWaiverModal(false);
+    setPendingServiceAction(null);
+  }, []);
+
+  // Handler for adding a meal
+  const handleAddMeal1 = useCallback(
+    async (guestId: string) => {
+      try {
+        await addMealRecord?.(guestId, 1);
+      } catch (error) {
+        console.error('Failed to add 1 meal:', error);
+      }
+    },
+    [addMealRecord]
+  );
+
+  const handleAddMeal2 = useCallback(
+    async (guestId: string) => {
+      try {
+        await addMealRecord?.(guestId, 2);
+      } catch (error) {
+        console.error('Failed to add 2 meals:', error);
+      }
+    },
+    [addMealRecord]
+  );
+
+  const handleAddExtraMeal = useCallback(
+    async (guestId: string) => {
+      try {
+        await addMealRecord?.(guestId, 1);
+      } catch (error) {
+        console.error('Failed to add extra meal:', error);
+      }
+    },
+    [addMealRecord]
+  );
+
+  const handleUndoMeal = useCallback(
+    async (guestId: string) => {
+      try {
+        await undoMealForGuest?.(guestId);
+      } catch (error) {
+        console.error('Failed to undo meal:', error);
+      }
+    },
+    [undoMealForGuest]
+  );
+
+  // Handler for adding a shower
+  const handleAddShower = useCallback(
+    (guestId: string) => {
+      const guest = guests.find(g => g.id === guestId);
+      if (guest) {
+        ensureWaiverThen(guest, 'shower', () => {
+          setSelectedGuest(guest);
+          setShowShowerModal(true);
+        });
+      }
+    },
+    [guests, ensureWaiverThen]
+  );
+
+  // Handler for booking shower
+  const handleBookShower = useCallback(
+    async (guestId: string, slotTime: string) => {
+      try {
+        await addShowerRecord?.(guestId, slotTime);
+        setShowShowerModal(false);
+        setSelectedGuest(null);
+      } catch (error) {
+        console.error('Failed to book shower:', error);
+      }
+    },
+    [addShowerRecord]
+  );
+
+  // Handler for adding laundry
+  const handleAddLaundry = useCallback(
+    (guestId: string) => {
+      const guest = guests.find(g => g.id === guestId);
+      if (guest) {
+        ensureWaiverThen(guest, 'laundry', () => {
+          setSelectedGuest(guest);
+          setShowLaundryModal(true);
+        });
+      }
+    },
+    [guests, ensureWaiverThen]
+  );
+
+  // Handler for booking laundry
+  const handleBookLaundry = useCallback(
+    async (guestId: string, bagNumber: string, laundryType: 'onsite' | 'offsite') => {
+      try {
+        await addLaundryRecord?.(guestId, laundryType);
+        setShowLaundryModal(false);
+        setSelectedGuest(null);
+      } catch (error) {
+        console.error('Failed to book laundry:', error);
+      }
+    },
+    [addLaundryRecord]
+  );
+
+  // Handler for adding bicycle service
+  const handleAddBicycle = useCallback(
+    (guestId: string) => {
+      const guest = guests.find(g => g.id === guestId);
+      if (guest) {
+        ensureWaiverThen(guest, 'bicycle', () => {
+          setSelectedGuest(guest);
+          setShowBicycleModal(true);
+        });
+      }
+    },
+    [guests, ensureWaiverThen]
+  );
+
+  // Handler for submitting bicycle repair
+  const handleSubmitBicycle = useCallback(
+    async (guestId: string, data: { repairTypes: string[]; notes: string }) => {
+      try {
+        await addBicycleRecord?.(guestId, { repairTypes: data.repairTypes, notes: data.notes });
+        setShowBicycleModal(false);
+        setSelectedGuest(null);
+      } catch (error) {
+        console.error('Failed to add bicycle repair:', error);
+      }
+    },
+    [addBicycleRecord]
+  );
+
+  // Handler for creating a new guest
+  const handleCreateGuest = useCallback(
+    async (formData: GuestFormData) => {
+      if (!formData.age || !formData.gender) {
+        throw new Error('Age group and gender are required');
+      }
+      await addGuest({
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        name: `${formData.firstName} ${formData.lastName}`,
+        preferredName: formData.preferredName,
+        housingStatus: formData.housingStatus,
+        age: formData.age,
+        gender: formData.gender,
+        location: formData.location,
+        notes: formData.notes,
+        bicycleDescription: formData.bicycleDescription,
+      });
+    },
+    [addGuest]
+  );
+
+  // Handler for editing a guest
+  const handleEditGuest = useCallback(
+    (guest: Guest) => {
+      // TODO: Open edit modal
+      console.log('Edit guest:', guest);
+    },
+    []
+  );
+
+  // Handler for deleting a guest
+  const handleDeleteGuest = useCallback(
+    async (guestId: string) => {
+      if (confirm('Are you sure you want to delete this guest?')) {
+        await deleteGuest(guestId);
+      }
+    },
+    [deleteGuest]
+  );
+
+  // Handler for banning a guest
+  const handleBanGuest = useCallback(
+    async (guestId: string) => {
+      const guest = guests.find((g) => g.id === guestId);
+      if (guest) {
+        setBanTarget(guest);
+      }
+    },
+    [guests]
+  );
+
+  // Handler for clearing a ban
+  const handleClearBan = useCallback(
+    async (guestId: string) => {
+      if (confirm('Are you sure you want to clear the ban for this guest?')) {
+        await updateGuest(guestId, {
+          bannedAt: null,
+          bannedUntil: null,
+          banReason: '',
+          isBanned: false,
+        });
+      }
+    },
+    [updateGuest]
+  );
+
+  const handleConfirmBan = useCallback(
+    async (reason: string, duration: string) => {
+      if (!banTarget) return;
+      const now = new Date();
+      let bannedUntil: string | null = null;
+
+      if (duration === '1d' || duration === '1w') {
+        const hours = duration === '1d' ? 24 : 24 * 7;
+        bannedUntil = new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString();
+      }
+
+      await updateGuest(banTarget.id, {
+        bannedAt: now.toISOString(),
+        bannedUntil,
+        banReason: reason,
+        isBanned: true,
+      });
+
+      setBanTarget(null);
+    },
+    [banTarget, updateGuest]
+  );
+
+  const handleCloseBanModal = useCallback(() => {
+    setBanTarget(null);
+  }, []);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Guest Check-in</h1>
-        <p className="text-gray-500 mt-1">
-          Search for guests or add new ones to check them in.
-        </p>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {/* Welcome Banner */}
+      <WelcomeBanner />
+
+      {/* Service Status Overview */}
+      <ServiceStatusOverview
+        showerStats={showerStats}
+        laundryStats={laundryStats}
+        canNavigate={canNavigateToServices}
+      />
+
+      {/* Guest List Component */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden p-4">
+        <GuestList
+          guests={guests}
+          isLoading={isLoading}
+          todayMealRecords={todayMealRecords}
+          todayShowerRecords={todayShowerRecords.map(r => ({ guestId: r.guestId, date: r.date }))}
+          todayLaundryRecords={todayLaundryRecords.map(r => ({ guestId: r.guestId, date: r.date }))}
+          onAddMeal1={handleAddMeal1}
+          onAddMeal2={handleAddMeal2}
+          onAddExtraMeal={handleAddExtraMeal}
+          onUndoMeal={handleUndoMeal}
+          onAddShower={handleAddShower}
+          onAddLaundry={handleAddLaundry}
+          onAddBicycle={handleAddBicycle}
+          onEditGuest={handleEditGuest}
+          onDeleteGuest={handleDeleteGuest}
+          onBanGuest={handleBanGuest}
+          onClearBan={handleClearBan}
+          onCreateGuest={handleCreateGuest}
+          showActions
+        />
       </div>
 
-      {/* Search and Actions */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search
-            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-            size={20}
-          />
-          <input
-            type="text"
-            placeholder="Search by name or ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
-          />
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => fetchGuests()}
-            disabled={isLoading}
-            className="px-4 py-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 rounded-lg flex items-center gap-2 text-gray-700 transition-colors"
-          >
-            <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <UserPlus size={18} />
-            Add Guest
-          </button>
-        </div>
-      </div>
+      {/* Shower Booking Modal */}
+      <ShowerBooking
+        isOpen={showShowerModal}
+        guest={selectedGuest}
+        onClose={() => { setShowShowerModal(false); setSelectedGuest(null); }}
+        onBook={handleBookShower}
+        showerRecords={allShowerRecords as any}
+        todayDateString={todayPacificDateString()}
+      />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Total Guests</p>
-          <p className="text-2xl font-bold text-gray-900">{guests.length}</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-sm text-gray-500">Search Results</p>
-          <p className="text-2xl font-bold text-gray-900">
-            {searchTerm ? filteredGuests.length : '-'}
-          </p>
-        </div>
-      </div>
+      {/* Laundry Booking Modal */}
+      <LaundryBooking
+        isOpen={showLaundryModal}
+        guest={selectedGuest}
+        onClose={() => { setShowLaundryModal(false); setSelectedGuest(null); }}
+        onBook={handleBookLaundry}
+        laundryRecords={allLaundryRecords as any}
+        todayDateString={todayPacificDateString()}
+      />
 
-      {/* Guest List */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center">
-            <RefreshCw className="animate-spin mx-auto mb-4 text-blue-600" size={32} />
-            <p className="text-gray-500">Loading guests...</p>
-          </div>
-        ) : filteredGuests.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="text-gray-500">
-              {searchTerm
-                ? 'No guests found matching your search.'
-                : 'No guests yet. Add your first guest to get started.'}
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {filteredGuests.slice(0, 50).map((guest) => (
-              <div
-                key={guest.id}
-                className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-gray-900">
-                      {guest.name || `${guest.firstName} ${guest.lastName}`}
-                    </h3>
-                    <p className="text-sm text-gray-500">
-                      ID: {guest.guestId} • {guest.location}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
-                      {guest.age}
-                    </span>
-                    <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">
-                      {guest.gender}
-                    </span>
-                    {guest.isBanned && (
-                      <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded">
-                        Banned
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-            {filteredGuests.length > 50 && (
-              <div className="p-4 text-center text-gray-500 text-sm">
-                Showing 50 of {filteredGuests.length} guests. Refine your search
-                to see more.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Add Guest Modal Placeholder */}
-      {showAddForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Add New Guest</h2>
-            <p className="text-gray-500 mb-4">
-              Guest form coming soon. This is a placeholder.
-            </p>
-            <button
-              onClick={() => setShowAddForm(false)}
-              className="w-full py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+      {/* Bicycle Repair Modal */}
+      {showBicycleModal && selectedGuest && (
+        <BicycleRepairBooking
+          guest={selectedGuest}
+          onClose={() => { setShowBicycleModal(false); setSelectedGuest(null); }}
+          onSubmit={handleSubmitBicycle}
+        />
       )}
+
+      <WaiverModal
+        isOpen={showWaiverModal && Boolean(pendingServiceAction)}
+        onClose={handleCloseWaiverModal}
+        onSign={async () => handleWaiverSigned()}
+        waivers={waiverModalWaivers}
+      />
+
+      <BanGuestModal
+        isOpen={Boolean(banTarget)}
+        guestName={banTarget ? `${banTarget.firstName} ${banTarget.lastName}` : ''}
+        onClose={handleCloseBanModal}
+        onBan={handleConfirmBan}
+      />
     </div>
   );
 }

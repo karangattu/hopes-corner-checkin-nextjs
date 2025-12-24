@@ -66,7 +66,7 @@ export function GuestCreateForm({
 }: GuestCreateFormProps) {
   return (
     <div
-      className="bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-800 rounded-xl p-6"
+      className="bg-white border-2 border-emerald-200 rounded-xl p-6"
       role="dialog"
       aria-labelledby="create-guest-title"
       aria-describedby="create-guest-description"
@@ -74,13 +74,13 @@ export function GuestCreateForm({
       <div className="flex justify-between items-center mb-6">
         <h3
           id="create-guest-title"
-          className="text-lg font-semibold flex items-center gap-2 text-gray-900 dark:text-white"
+          className="text-lg font-semibold flex items-center gap-2 text-gray-900"
         >
-          <UserPlus size={20} className="text-blue-600" /> Create New Guest
+          <UserPlus size={20} className="text-emerald-600" /> Create New Guest
         </h3>
         <button
           onClick={onCancel}
-          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          className="text-gray-400 hover:text-gray-600 transition-colors"
           aria-label="Close create guest form"
           type="button"
         >
@@ -89,16 +89,16 @@ export function GuestCreateForm({
       </div>
 
       {createError && (
-        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2">
-          <AlertCircle size={20} className="text-red-600 dark:text-red-400" />
-          <span className="text-red-800 dark:text-red-300">{createError}</span>
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+          <AlertCircle size={20} className="text-red-600" />
+          <span className="text-red-800">{createError}</span>
         </div>
       )}
 
       {duplicateWarning && (
-        <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-2">
-          <AlertCircle size={20} className="text-amber-600 dark:text-amber-400" />
-          <span className="text-amber-800 dark:text-amber-300">{duplicateWarning}</span>
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+          <AlertCircle size={20} className="text-amber-600" />
+          <span className="text-amber-800">{duplicateWarning}</span>
         </div>
       )}
 
@@ -108,7 +108,7 @@ export function GuestCreateForm({
           <div>
             <label
               htmlFor="guest-first-name"
-              className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+              className="block text-sm font-semibold text-gray-700 mb-2"
             >
               First Name*
             </label>
@@ -120,17 +120,17 @@ export function GuestCreateForm({
               value={formData.firstName}
               onChange={onChange}
               onBlur={onNameBlur}
-              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors dark:bg-gray-700 dark:text-white ${
+              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                 fieldErrors.firstName
-                  ? 'border-red-300 dark:border-red-600 focus:ring-red-500 focus:border-red-500'
-                  : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
+                  ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
+                  : 'border-gray-300 focus:ring-emerald-500 focus:border-emerald-500'
               }`}
               placeholder="Enter first name"
               required
               disabled={isCreating}
             />
             {fieldErrors.firstName && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{fieldErrors.firstName}</p>
+              <p className="mt-1 text-sm text-red-600">{fieldErrors.firstName}</p>
             )}
           </div>
 
@@ -138,7 +138,7 @@ export function GuestCreateForm({
           <div>
             <label
               htmlFor="guest-last-name"
-              className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+              className="block text-sm font-semibold text-gray-700 mb-2"
             >
               Last Name*
             </label>
@@ -149,17 +149,17 @@ export function GuestCreateForm({
               value={formData.lastName}
               onChange={onChange}
               onBlur={onNameBlur}
-              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors dark:bg-gray-700 dark:text-white ${
+              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
                 fieldErrors.lastName
-                  ? 'border-red-300 dark:border-red-600 focus:ring-red-500 focus:border-red-500'
-                  : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500'
+                  ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
+                  : 'border-gray-300 focus:ring-emerald-500 focus:border-emerald-500'
               }`}
               placeholder="Enter last name"
               required
               disabled={isCreating}
             />
             {fieldErrors.lastName && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{fieldErrors.lastName}</p>
+              <p className="mt-1 text-sm text-red-600">{fieldErrors.lastName}</p>
             )}
           </div>
 
@@ -167,7 +167,7 @@ export function GuestCreateForm({
           <div>
             <label
               htmlFor="guest-preferred-name"
-              className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+              className="block text-sm font-semibold text-gray-700 mb-2"
             >
               Preferred Name
             </label>
@@ -178,11 +178,11 @@ export function GuestCreateForm({
               value={formData.preferredName}
               onChange={onChange}
               onBlur={onNameBlur}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               placeholder="What should we call them?"
               disabled={isCreating}
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <p className="mt-1 text-xs text-gray-500">
               Shown with the legal name for staff awareness.
             </p>
           </div>
@@ -191,19 +191,19 @@ export function GuestCreateForm({
           <div>
             <label
               htmlFor="guest-housing-status"
-              className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+              className="block text-sm font-semibold text-gray-700 mb-2"
             >
               Housing Status
             </label>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 flex items-start gap-1.5">
-              <span className="text-blue-500 font-medium">💙</span>
+            <p className="text-xs text-gray-600 mb-2 flex items-start gap-1.5">
+              <span className="text-emerald-600 font-medium">🏠</span>
               <span>
                 Please ask: "Do you have stable housing right now?" Select the option that best
                 describes their current situation.
-                <span className="block mt-1 text-[11px] text-gray-600 dark:text-gray-400">
+                <span className="block mt-1 text-[11px] text-gray-600">
                   Spanish: "¿Tiene una vivienda estable en este momento?"
                 </span>
-                <span className="block mt-0.5 text-[11px] text-gray-600 dark:text-gray-400">
+                <span className="block mt-0.5 text-[11px] text-gray-600">
                   Mandarin: "您现在有稳定的住处吗？"
                 </span>
               </span>
@@ -213,7 +213,9 @@ export function GuestCreateForm({
               name="housingStatus"
               value={formData.housingStatus}
               onChange={onChange}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                formData.housingStatus ? 'text-gray-900' : 'text-gray-600'
+              }`}
               disabled={isCreating}
             >
               {HOUSING_STATUSES.map((h) => (
@@ -230,7 +232,7 @@ export function GuestCreateForm({
           <div>
             <label
               htmlFor="guest-age-group"
-              className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+              className="block text-sm font-semibold text-gray-700 mb-2"
             >
               Age Group*
             </label>
@@ -239,7 +241,7 @@ export function GuestCreateForm({
               name="age"
               value={formData.age}
               onChange={onChange}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${formData.age ? 'text-gray-900' : 'text-gray-600'}`}
               disabled={isCreating}
               required
             >
@@ -256,7 +258,7 @@ export function GuestCreateForm({
           <div>
             <label
               htmlFor="guest-gender"
-              className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+              className="block text-sm font-semibold text-gray-700 mb-2"
             >
               Gender*
             </label>
@@ -265,7 +267,7 @@ export function GuestCreateForm({
               name="gender"
               value={formData.gender}
               onChange={onChange}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${formData.gender ? 'text-gray-900' : 'text-gray-600'}`}
               disabled={isCreating}
               required
             >
@@ -282,7 +284,7 @@ export function GuestCreateForm({
           <div>
             <label
               htmlFor="guest-location"
-              className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+              className="block text-sm font-semibold text-gray-700 mb-2"
             >
               Location*
             </label>
@@ -294,7 +296,7 @@ export function GuestCreateForm({
                 id="guest-location"
                 value={formData.location}
                 onChange={(e) => onLocationChange(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className={`w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${formData.location ? 'text-gray-900' : 'text-gray-600'}`}
                 disabled={isCreating}
               >
                 <option value="">Select location</option>
@@ -312,7 +314,7 @@ export function GuestCreateForm({
         <div>
           <label
             htmlFor="guest-notes"
-            className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+            className="block text-sm font-semibold text-gray-700 mb-2"
           >
             Notes
           </label>
@@ -321,7 +323,7 @@ export function GuestCreateForm({
             name="notes"
             value={formData.notes}
             onChange={onChange}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-700 dark:text-white"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
             rows={3}
             placeholder="Any additional information (optional)"
             disabled={isCreating}
@@ -332,7 +334,7 @@ export function GuestCreateForm({
         <div>
           <label
             htmlFor="guest-bicycle-description"
-            className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2"
+            className="block text-sm font-semibold text-gray-700 mb-2"
           >
             Bicycle Description
           </label>
@@ -341,12 +343,12 @@ export function GuestCreateForm({
             name="bicycleDescription"
             value={formData.bicycleDescription}
             onChange={onChange}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-700 dark:text-white"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
             rows={2}
             placeholder="Bike make, color, or unique markers (optional)"
             disabled={isCreating}
           />
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mt-1 text-xs text-gray-500">
             Helps confirm it's the same bicycle when logging repairs.
           </p>
         </div>
@@ -356,7 +358,7 @@ export function GuestCreateForm({
           <button
             type="submit"
             disabled={isCreating}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
           >
             <Plus size={18} /> {isCreating ? 'Creating...' : 'Create Guest'}
           </button>
@@ -364,7 +366,7 @@ export function GuestCreateForm({
             type="button"
             onClick={onCancel}
             disabled={isCreating}
-            className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-6 py-3 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
           >
             Cancel
           </button>
